@@ -1,0 +1,331 @@
+<html class="js-focus-visible" data-js-focus-visible=""><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <title>MP3 Recorder</title>
+  <script src="./MP3 Encoder_files/sprintf.js"></script>
+</head>
+
+<body>
+
+<h1>MP3 Recorder</h1>
+
+<p>Work on chrome or firefox.You should choose share audio when sharing.</p>
+<p>The audio never leaves the browser, my server is never involved
+after providing the page. The output is limit at 10MB for memory concern</p>
+<p>Based on the reference：
+<a href="https://aws.nlited.org/p599.htm">here</a>.Change audio source from microphone to system audio.</p>
+<br/>
+<p>本工具可以录制在线视频的音乐，直接浏览器生成，数据不会传服务器</p>
+<p>在线录制电脑上的音频，点击power，选择分享整个屏幕或者对应标签页(没有影响)，勾选分享音频，然后点击start即可开始录制，点击stop结束录制，按文件名下载</p>
+<p>之后你可以修改文件名，然后上传到网易云音乐的云盘，这样你就可以在手机上听或者下载音乐了</p>
+<p>有用请在我的<a href="https://blog.csdn.net/Memory_and_Dream/article/details/108381349">博客</a>上给个好评，谢谢</p>
+
+<audio id="AudioPlayer" controls="controls">
+  <source type="audio/mpeg">
+</audio><br>
+
+<button id="btnPower" onclick="onPower()">Power</button>
+<button id="btnRecord" onclick="onRecord()" disabled="">Record</button>
+<button id="btnStop" onclick="onStop()" disabled="">Stop</button>
+
+<p>
+<a id="DownloadLink" download="recorded.mp3">recorded.mp3</a>
+<span id="status"></span>
+</p>
+
+<div id="log" style="width:100%; border:solid thin; margin:8px; padding:4px;">
+  Waiting for scripts...<br>
+Window loaded.<br>
+</div>
+
+<script id="logger" type="text/javascript">
+//printf-style console output.
+function log(fmt,args) {
+  var text= this.sprintf.apply(this,arguments);
+  var element= document.querySelector('#log');
+  element.innerHTML+= text+"<br>\n";
+}
+
+//printf-style status line.
+function status(fmt,args) {
+  var text= this.sprintf.apply(this,arguments);
+  var element= document.getElementById('status');
+  element.innerHTML= text;
+}
+
+(function(window) {
+  log("Window loaded.");
+})(window);
+</script>
+
+<script id="loadjs" type="text/javascript">
+//Load a supplemental javascript on demand.
+//cb is the function that will be called when the script is ready.
+function loadScript(name,path,cb) {
+  var node= document.createElement('SCRIPT');
+  node.type= 'text/javascript';
+  node.src= path;
+  var head= document.getElementsByTagName('HEAD');
+  if(head[0]!=null)
+    head[0].appendChild(node);
+  if(cb!=null) {
+    node.onreadystagechange= cb;
+    node.onload= cb;
+  }
+}
+</script>
+
+<script id="taskUI" type="text/javascript">
+//(C)2016 nlited systems inc. http://nlited.org
+var gAudio= null;       //Audio context
+var gAudioSrc= null;    //Audio source
+var gNode= null;        //The audio processor node
+var gIsLame= false;     //Has lame.min.js been loaded?
+var gLame= null;        //The LAME encoder library
+var gEncoder= null;     //The MP3 encoder object
+var gStrmMp3= [];       //Collection of MP3 buffers
+var gIsRecording= false;
+var gCfg= {             //Encoder configuration
+  chnlCt:         2,    //1=mono, 2=stereo
+  bufSz:          4096, //input buffer size (bytes), 16bit signed int.
+  sampleRate:     48000,//Input sample rate (samples per second)
+  bitRate:        128    //Output bit rate (9-128)
+};
+var gPcmCt= 0;          //Total input bytes
+var gMp3Ct= 0;          //Total output bytes
+
+//Power button
+function onPower(btn) {
+  if(!gAudio) {
+    PowerOn();
+  } else {
+    PowerOff();
+  }
+}
+async function startCapture() {
+  let captureStream = null;
+
+  try {
+    captureStream = await navigator.mediaDevices.getDisplayMedia({audio: { autoGainControl:false,echoCancellation:false,
+                googleAutoGainControl:false,noiseSuppression:false
+          } ,video: true});
+  } catch(err) {
+    console.error("Error: " + err);
+  }
+  return captureStream;
+}
+
+function PowerOn() {
+  log("Powering up...");
+  var caps= { audio: true };
+  try {
+    //Browser compatibility
+    window.AudioContext= window.AudioContext || window.webkitAudioContext || AudioContext;
+    navigator.getUserMedia= navigator.getUserMedia
+      || navigator.webkitGetUserMedia
+      || navigator.mozGetUserMedia
+      || navigator.msGetUserMedia
+      || MediaDevices.getUserMedia;
+
+    //test
+
+    if(!(gAudio= new window.AudioContext())) {
+      log("ERR: Unable to create AudioContext.");
+    } else {
+      // navigator.getUserMedia(caps,onUserMedia,onFail);
+      recorderStream=startCapture()
+        recorderStream.then(v =>{
+            audio_track = v.getAudioTracks()
+    audio_steam = new MediaStream(audio_track)
+        onUserMedia(audio_steam)}
+
+    )
+
+
+    }
+  } catch(ex) {
+      console.log(ex)
+    log("ERR: Unable to find any audio support.");
+    gAudio= null;
+  }
+
+  function onFail(ex) {
+    log("ERR: getUserMedia failed: %s",ex);
+  }
+}
+
+//Called when audio capture has been created.
+function onUserMedia(stream) {
+    console.log(stream);
+  if(!(gAudioSrc= gAudio.createMediaStreamSource(stream))) {
+    log("ERR: Unable to create audio source.");
+  } else if(!gIsLame) {
+    log("Fetching encoder...");
+    loadScript("lame","js/lame.js",LameCreate);
+  } else {
+    LameCreate();
+  }
+}
+
+//Called when the lame library has been loaded.
+function LameCreate() {
+  gIsLame= true;
+  if(!(gEncoder= Mp3Create())) {
+    log("ERR: Unable to create MP3 encoder.");
+  } else {
+    gStrmMp3= [];
+    gPcmCt= 0;
+    gMp3Ct= 0;
+    log("Power ON.");
+    document.getElementById('btnRecord').disabled= false;
+    document.getElementById('btnStop').disabled= false;
+  }
+}
+
+//Create the mp3 encoder object.
+function Mp3Create() {
+  if(!(gLame= new lamejs())) {
+    log("ERR: Unable to create LAME object.");
+  } else if(!(gEncoder= new gLame.Mp3Encoder(gCfg.chnlCt,gCfg.sampleRate,gCfg.bitRate))) {
+    log("ERR: Unable to create MP3 encoder.");
+  } else {
+    log("MP3 encoder created.");
+  }
+  return(gEncoder);
+}
+
+//Shut everything down.
+function PowerOff() {
+  log("Power down...");
+  if(gIsRecording) {
+    log("ERR: PowerOff: You need to stop recording first.");
+  } else {
+    gEncoder= null;
+    gLame= null;
+    gNode= null;
+    gAudioSrc= null;
+    gAudio= null;
+    log("Power OFF.");
+    document.getElementById('btnRecord').disabled= true;
+    document.getElementById('btnStop').disabled= true;
+  }
+}
+
+//Record button: Begin recording.
+function onRecord(btn) {
+  var creator;
+  log("Start recording...");
+  if(!gAudio) {
+    log("ERR: No Audio source.");
+  } else if(!gEncoder) {
+    log("ERR: No encoder.");
+  } else if(gIsRecording) {
+    log("ERR: Already recording.");
+  } else {
+    //Create the audio capture node.
+    if(!gNode) {
+      if(!(creator= gAudioSrc.context.createScriptProcessor || gAudioSrc.createJavaScriptNode)) {
+        log("ERR: No processor creator?");
+      } else if(!(gNode= creator.call(gAudioSrc.context,gCfg.bufSz,gCfg.chnlCt,gCfg.chnlCt))) {
+        log("ERR: Unable to create processor node.");
+      }
+    }
+    if(!gNode) {
+      log("ERR: onRecord: No processor node.");
+    } else {
+      //Set callbacks, connect the node between the audio source and destination.
+      gNode.onaudioprocess= onAudioProcess;
+      gAudioSrc.connect(gNode);
+      gNode.connect(gAudioSrc.context.destination);
+      gIsRecording= true;
+      log("RECORD");
+    }
+  }
+}
+
+//Stop recording.
+function onStop(btn) {
+  log("Stop recording...");
+  if(!gAudio) {
+    log("ERR: onStop: No audio.");
+  } else if(!gAudioSrc) {
+    log("ERR: onStop: No audio source.");
+  } else if(!gIsRecording) {
+    log("ERR: onStop: Not recording.");
+  } else {
+    //Disconnect the node
+    gNode.onaudioprocess= null;
+    gAudioSrc.disconnect(gNode);
+    gNode.disconnect();
+    gIsRecording= false;
+    //Flush the last mp3 buffer.
+    var mp3= gEncoder.flush();
+    if(mp3.length>0)
+      gStrmMp3.push(mp3);
+    //Present the mp3 stream on the page.
+    showMp3(gStrmMp3);
+    log("STOP");
+  }
+}
+
+//Process a single audio buffer.
+//Input is an array of floating-point samples.
+function onAudioProcess(e) {
+  //Cap output stream size
+  if(gMp3Ct > 10*1000*1000)
+    return;
+  var inBuf= e.inputBuffer;
+
+  var leftsamples= inBuf.getChannelData(0);
+  var rightsamples= inBuf.getChannelData(0);
+  var leftsampleCt= leftsamples.length;
+   var rightsampleCt= rightsamples.length;
+  //Convert floating-point to 16bit signed int.
+  //This may modify the number of samples.
+  var leftsamples16= convertFloatToInt16(leftsamples);
+   var rightsamples16= convertFloatToInt16(rightsamples);
+  if(leftsamples16.length > 0) {
+   gPcmCt+= leftsamples16.length*2;
+   gPcmCt+= rightsamples.length*2;
+
+    //Encode PCM to mp3
+    var mp3buf= gEncoder.encodeBuffer(leftsamples16,rightsamples16);
+    var mp3Ct= mp3buf.length;
+    if(mp3Ct>0) {
+      //Add buffer to in-memory output stream.
+      gStrmMp3.push(mp3buf);
+      gMp3Ct+= mp3Ct;
+    }
+    status("%d / %d: %2.2f%%",gPcmCt,gMp3Ct,(gMp3Ct*100)/gPcmCt);
+  }
+}
+
+//Convert floating point to 16bit signed int.
+function convertFloatToInt16(inFloat) {
+  var sampleCt= inFloat.length;
+  var outInt16= new Int16Array(sampleCt);
+  for(var n1=0;n1<sampleCt;n1++) {
+    //This is where I can apply waveform modifiers.
+    var sample16= 0x8000*inFloat[n1];
+    //Clamp value to avoid integer overflow, which causes audible pops and clicks.
+    sample16= (sample16 < -32767) ? -32767 : (sample16 > 32767) ? 32767 : sample16;
+    outInt16[n1]= sample16;
+  }
+  return(outInt16);
+}
+
+//Present the output mp3 stream on the page
+//as a download link and content in the audio control.
+function showMp3(mp3) {
+  //Consolidate the collection of MP3 buffers into a single data Blob.
+  var blob= new Blob(gStrmMp3,{type: 'audio/mp3'});
+  //Create a URL to the blob.
+  var url= window.URL.createObjectURL(blob);
+  //Use the blob as the source for link and audio control
+  var audio= document.getElementById('AudioPlayer');
+  var download= document.getElementById('DownloadLink');
+  audio.src= url;
+  download.href= url;
+}
+</script>
+
+
+</body></html>
