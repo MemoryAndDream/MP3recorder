@@ -6,6 +6,8 @@ Recorder can only run with localhost or https
 基于lamejs编写 [https://github.com/zhuker/lamejs]
 录制功能需要https或者localhost才能运行
 
+online demo: [https://memoryanddream.github.io/index.html]
+
 TODO:
 操作流程优化，需要吧power和record合并
 音质好像有点差,可能是因为mp3是个压缩格式
@@ -14,4 +16,4 @@ TODO:
 
 原音质下载？
 
-qq音乐能自动识别曲子。。。神奇
+qq音乐能自动识别曲子。。。根据名称？

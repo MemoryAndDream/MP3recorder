@@ -86,7 +86,7 @@ var gIsRecording= false;
 var gCfg= {             //Encoder configuration
   chnlCt:         2,    //1=mono, 2=stereo
   bufSz:          4096, //input buffer size (bytes), 16bit signed int.
-  sampleRate:     48000,//Input sample rate (samples per second)
+  sampleRate:     44100,//Input sample rate (samples per second)
   bitRate:        128    //Output bit rate (9-128)
 };
 var gPcmCt= 0;          //Total input bytes
@@ -136,10 +136,7 @@ function PowerOn() {
             audio_track = v.getAudioTracks()
     audio_steam = new MediaStream(audio_track)
         onUserMedia(audio_steam)}
-
     )
-
-
     }
   } catch(ex) {
       console.log(ex)
